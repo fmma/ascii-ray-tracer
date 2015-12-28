@@ -4,6 +4,76 @@
 #include <algorithm>
 #include <string>
 
+#ifdef _WIN32
+#define NOMINMAX
+#include <Windows.h>
+#include <fstream>
+void CaptureScreen(HWND window, const char* filename)
+{
+	// get screen rectangle
+	RECT windowRect;
+	GetWindowRect(window, &windowRect);
+
+	// bitmap dimensions
+	int bitmap_dx = windowRect.right - windowRect.left;
+	int bitmap_dy = windowRect.bottom - windowRect.top;
+
+	// create file
+	std::ofstream file(filename, std::ios::binary);
+	if( !file ) return;
+
+	// save bitmap file headers
+	BITMAPFILEHEADER fileHeader;
+	BITMAPINFOHEADER infoHeader;
+
+	fileHeader.bfType = 0x4d42;
+	fileHeader.bfSize = 0;
+	fileHeader.bfReserved1 = 0;
+	fileHeader.bfReserved2 = 0;
+	fileHeader.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+
+	infoHeader.biSize = sizeof(infoHeader);
+	infoHeader.biWidth = bitmap_dx;
+	infoHeader.biHeight = bitmap_dy;
+	infoHeader.biPlanes = 1;
+	infoHeader.biBitCount = 24;
+	infoHeader.biCompression = BI_RGB;
+	infoHeader.biSizeImage = 0;
+	infoHeader.biXPelsPerMeter = 0;
+	infoHeader.biYPelsPerMeter = 0;
+	infoHeader.biClrUsed = 0;
+	infoHeader.biClrImportant = 0;
+
+	file.write((char*)&fileHeader, sizeof(fileHeader));
+	file.write((char*)&infoHeader, sizeof(infoHeader));
+
+	// dibsection information
+	BITMAPINFO info;
+	info.bmiHeader = infoHeader;
+
+	// ------------------
+	// THE IMPORTANT CODE
+	// ------------------
+	// create a dibsection and blit the window contents to the bitmap
+	HDC winDC = GetWindowDC(window);
+	HDC memDC = CreateCompatibleDC(winDC);
+	BYTE* memory = 0;
+	HBITMAP bitmap = CreateDIBSection(winDC, &info, DIB_RGB_COLORS, (void**)&memory, 0, 0);
+	SelectObject(memDC, bitmap);
+	BitBlt(memDC, 0, 0, bitmap_dx, bitmap_dy, winDC, 0, 0, SRCCOPY);
+	DeleteDC(memDC);
+	ReleaseDC(window, winDC);
+
+	// save dibsection data
+	int bytes = (((24 * bitmap_dx + 31) & (~31)) / 8)*bitmap_dy;
+	file.write((const char*)memory, bytes);
+
+	// HA HA, forgot paste in the DeleteObject lol, happy now ;)?
+	DeleteObject(bitmap);
+}
+
+#endif
+
 typedef float Real;
 
 struct Vec3
@@ -117,16 +187,16 @@ struct Vec3
 
 namespace Shapes
 {
-Real Plane(Vec3 Position, Vec3 Normal)
+Real Plane(const Vec3& Position, const Vec3& Normal)
 {
 	//return Position.Dot(Normal.Normalized());
 	return Position.Y;
 }
-Real Sphere(Vec3 Position, Real Radius)
+Real Sphere(const Vec3& Position, Real Radius)
 {
 	return Position.Length() - Radius;
 }
-Real Box(Vec3 Position, Vec3 Bounds)
+Real Box(const Vec3& Position, Vec3 Bounds)
 {
 	Vec3 Dist = Position.Abs() - Bounds;
 	return std::min<Real>(std::max(Dist.X, std::max<Real>(Dist.Y, Dist.Z)), 0.0) +
@@ -134,11 +204,11 @@ Real Box(Vec3 Position, Vec3 Bounds)
 		std::max<Real>(Dist.Y,0.0),
 		std::max<Real>(Dist.Z,0.0) }.Length();
 }
-Real RoundBox(Vec3 Position, Vec3 Bounds, Real Radius)
+Real RoundBox(const Vec3& Position, Vec3 Bounds, Real Radius)
 {
 	return Box(Position, Bounds) - Radius;
 }
-Real Capsule(Vec3 Position, Vec3 A, Vec3 B, Real Radius)
+Real Capsule(const Vec3& Position, Vec3 A, Vec3 B, Real Radius)
 {
 	Vec3 Pa = Position - A;
 	Vec3 Ba = B - A;
@@ -146,7 +216,7 @@ Real Capsule(Vec3 Position, Vec3 A, Vec3 B, Real Radius)
 	H = std::min<Real>(0, std::max<Real>(1.0, H));
 	return (Pa - (Ba*H)).Length() - Radius;
 }
-Real Torus(Vec3 Position, Real InRadius, Real OutRadius)
+Real Torus(const Vec3& Position, Real InRadius, Real OutRadius)
 {
 	Vec3 Q{ Vec3{Position.X,Position.Z,0}.Length() - OutRadius,Position.Y };
 	return Q.Length() - InRadius;
@@ -167,17 +237,46 @@ Real Subtract(Real A, Real B)
 {
 	return Intersection(-A, B);
 }
-Vec3 Repeat(Vec3 Position, Vec3 Bounds)
+}
+
+namespace Translate
 {
-	return (Position % Bounds) + (Bounds*Real(0.5));
+const static Real Pi(static_cast<Real>(3.1415926535897932384626433));
+Vec3 RotX(const Vec3& Position, Real Angle)
+{
+	Angle *= Pi / Real(180);
+	return Vec3{
+		Position.X,
+		Position.Y * cos(Angle) - Position.Z * sin(Angle),
+		Position.Y * sin(Angle) + Position.Z * cos(Angle),
+	};
+}
+Vec3 RotY(const Vec3& Position, Real Angle)
+{
+	Angle *= Pi / Real(180);
+	return Vec3{
+		Position.Z * sin(Angle) + Position.X * cos(Angle),
+		Position.Y,
+		Position.Z * cos(Angle) - Position.X * sin(Angle),
+	};
+}
+Vec3 RotZ(const Vec3& Position, Real Angle)
+{
+	Angle *= Pi / Real(180);
+	return Vec3{
+		Position.X * cos(Angle) - Position.Y * sin(Angle),
+		Position.X * sin(Angle) + Position.Y * cos(Angle),
+		Position.Z,
+	};
 }
 }
 
 #define WIDTH 79
-#define HEIGHT 37
+#define HEIGHT 39
 #define PREC 0.002
 
-Real Scene(Vec3 Point)
+static size_t Tick = 0;
+Real Scene(const Vec3& Point)
 {
 	Real Distance = 0;
 
@@ -190,13 +289,8 @@ Real Scene(Vec3 Point)
 
 	Distance = Operations::Union(
 		Distance,
-		Shapes::Sphere(Operations::Repeat(Point, Vec3{ 1,1,1 }), 0.125)
-		);
-
-	Distance = Operations::Union(
-		Distance,
-		Shapes::RoundBox(Point - Vec3{ -5,0,5 },
-						 Vec3{ 2,3.2f,0.2f }, 0.225f)
+		Shapes::RoundBox(Translate::RotZ(Point - Vec3{ -5,2,5 }, Real(15 + Tick * 15)),
+						 Vec3{ 1,2,1 }, 0.525f)
 		);
 
 	Distance = Operations::Union(
@@ -209,14 +303,24 @@ Real Scene(Vec3 Point)
 
 	Distance = Operations::Union(
 		Distance,
-		Shapes::Torus(Point - Vec3{ 0,Real(0.5),12 },
-					  Real(0.5), Real(6)
+		Shapes::Torus(Translate::RotX(Point - Vec3{ 0,Real(0.5),12 }, 45),
+					  Real(1), Real(6)
 					  ));
+
+	for( size_t i = 1; i < 8; i++ )
+	{
+		Distance = Operations::Union(
+			Distance,
+			Shapes::Torus(
+				Translate::RotZ(Translate::RotX(Point - Vec3{ 0,Real(0.5),Real(12 + i * 7) }, 85), i * 30 + (Tick * 5)),
+				Real(1), Real(6)
+				));
+	}
 
 	return Distance;
 }
 
-Vec3 CalcNormal(Vec3 Point)
+Vec3 CalcNormal(const Vec3& Point)
 {
 #define EPSILON static_cast<Real>(0.001)
 	return Vec3{
@@ -226,7 +330,7 @@ Vec3 CalcNormal(Vec3 Point)
 	}.Normalized();
 }
 
-Real March(Vec3 Origin, Vec3 Ray, bool* Hit)
+Real March(const Vec3& Origin, const Vec3& Ray, bool* Hit)
 {
 	Real Distance = 0;
 	for( size_t i = 0; i < 64; i++ )
@@ -247,17 +351,35 @@ Real March(Vec3 Origin, Vec3 Ray, bool* Hit)
 	return Distance;
 }
 
+Real Shadow(const Vec3& LightPos, const Vec3& LightDir, Real Min, Real Max, Real K)
+{
+	Real Res = 1;
+	for( Real t = Min; t < Max;)
+	{
+		Real Distance = Scene(LightPos + LightDir*t);
+		if( Distance < PREC )
+		{
+			return 0.0;
+		}
+		Res = std::min(Res, K*Distance / t);
+		t += Distance;
+	}
+	return Res;
+}
+
 const char Shades[] = ".:*oe&#%@";
 
 int main()
 {
+	Vec3 LightDir = Vec3{ 1,1,0 }.Normalized();
 	Vec3 EyePos = Vec3{ 0,2,-6 };
 
 	std::string Screen;
 	Screen.reserve(WIDTH * HEIGHT);
 	do
 	{
-		EyePos.Z += 0.5;
+		EyePos.Z += Real(0.15);
+		Tick++;
 		for( size_t y = 0; y < HEIGHT; y++ )
 		{
 			for( size_t x = 0; x < WIDTH; x++ )
@@ -279,10 +401,10 @@ int main()
 
 				// Aspect Ratio Correction
 				UV.X *= WIDTH / HEIGHT;
-				//UV.X *= 0.5;
+				//UV.X *= 0.75;
 
 				// Fov
-				UV.Z = Real(0.7);
+				UV.Z = Real(2);
 
 				bool Hit = false;
 
@@ -293,9 +415,13 @@ int main()
 				if( Hit )
 				{
 					Vec3 Normal = CalcNormal(Point);
-					Real Diffuse = Normal.Dot(Vec3{ Real(1),Real(1),Real(1) }.Normalized());
+					Real Diffuse = Normal.Dot(LightDir);
 					Diffuse *= 0.5;
 					Diffuse += 0.5;
+
+					Diffuse *= Diffuse;
+
+					Diffuse *= Shadow(Point, LightDir, Real(0.5), 10, 10);
 
 					Screen += Shades[static_cast<size_t>(Diffuse*(sizeof(Shades) - 2))];
 				}
@@ -306,8 +432,12 @@ int main()
 			}
 			Screen += "\n";
 		}
-		printf("%s\n", Screen.c_str());
+		printf("%s", Screen.c_str());
+		// Screenshot
+#ifdef _WIN32
+		CaptureScreen(GetForegroundWindow(), (std::to_string(Tick) + ".bmp").c_str());
+#endif
 		Screen.clear();
-	} while( getchar() != 'q' );
+	} while( /*getchar() != 'q'*/ Tick < 200 );
 	return 0;
 }
