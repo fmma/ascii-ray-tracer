@@ -10,19 +10,14 @@
 #include <fstream>
 void CaptureScreen(HWND window, const char* filename)
 {
-	// get screen rectangle
 	RECT windowRect;
 	GetWindowRect(window, &windowRect);
-
-	// bitmap dimensions
 	int bitmap_dx = windowRect.right - windowRect.left;
 	int bitmap_dy = windowRect.bottom - windowRect.top;
 
-	// create file
 	std::ofstream file(filename, std::ios::binary);
 	if( !file ) return;
 
-	// save bitmap file headers
 	BITMAPFILEHEADER fileHeader;
 	BITMAPINFOHEADER infoHeader;
 
@@ -47,14 +42,9 @@ void CaptureScreen(HWND window, const char* filename)
 	file.write((char*)&fileHeader, sizeof(fileHeader));
 	file.write((char*)&infoHeader, sizeof(infoHeader));
 
-	// dibsection information
 	BITMAPINFO info;
 	info.bmiHeader = infoHeader;
 
-	// ------------------
-	// THE IMPORTANT CODE
-	// ------------------
-	// create a dibsection and blit the window contents to the bitmap
 	HDC winDC = GetWindowDC(window);
 	HDC memDC = CreateCompatibleDC(winDC);
 	BYTE* memory = 0;
@@ -64,11 +54,9 @@ void CaptureScreen(HWND window, const char* filename)
 	DeleteDC(memDC);
 	ReleaseDC(window, winDC);
 
-	// save dibsection data
 	int bytes = (((24 * bitmap_dx + 31) & (~31)) / 8)*bitmap_dy;
 	file.write((const char*)memory, bytes);
 
-	// HA HA, forgot paste in the DeleteObject lol, happy now ;)?
 	DeleteObject(bitmap);
 }
 
