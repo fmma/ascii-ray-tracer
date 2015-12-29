@@ -8,57 +8,57 @@
 #define NOMINMAX
 #include <Windows.h>
 #include <fstream>
-void CaptureScreen(HWND window, const char* filename)
+void CaptureScreen(HWND Window, const char* filename)
 {
-	RECT windowRect;
-	GetWindowRect(window, &windowRect);
+	RECT WindowBounds;
+	GetWindowRect(Window, &WindowBounds);
 
-	int bitmap_dx = windowRect.right - windowRect.left;
-	int bitmap_dy = windowRect.bottom - windowRect.top;
+	int Width = WindowBounds.right - WindowBounds.left;
+	int Height = WindowBounds.bottom - WindowBounds.top;
 
-	std::ofstream file(filename, std::ios::binary);
-	if( !file ) return;
+	std::ofstream fOut(filename, std::ios::binary);
+	if( !fOut ) return;
 
-	BITMAPFILEHEADER fileHeader;
-	BITMAPINFOHEADER infoHeader;
+	BITMAPFILEHEADER BmpHeader;
+	BITMAPINFOHEADER InfoHeader;
 
-	fileHeader.bfType = 0x4d42;
-	fileHeader.bfSize = 0;
-	fileHeader.bfReserved1 = 0;
-	fileHeader.bfReserved2 = 0;
-	fileHeader.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+	BmpHeader.bfType = 0x4d42;
+	BmpHeader.bfSize = 0;
+	BmpHeader.bfReserved1 = 0;
+	BmpHeader.bfReserved2 = 0;
+	BmpHeader.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
 
-	infoHeader.biSize = sizeof(infoHeader);
-	infoHeader.biWidth = bitmap_dx;
-	infoHeader.biHeight = bitmap_dy;
-	infoHeader.biPlanes = 1;
-	infoHeader.biBitCount = 24;
-	infoHeader.biCompression = BI_RGB;
-	infoHeader.biSizeImage = 0;
-	infoHeader.biXPelsPerMeter = 0;
-	infoHeader.biYPelsPerMeter = 0;
-	infoHeader.biClrUsed = 0;
-	infoHeader.biClrImportant = 0;
+	InfoHeader.biSize = sizeof(InfoHeader);
+	InfoHeader.biWidth = Width;
+	InfoHeader.biHeight = Height;
+	InfoHeader.biPlanes = 1;
+	InfoHeader.biBitCount = 24;
+	InfoHeader.biCompression = BI_RGB;
+	InfoHeader.biSizeImage = 0;
+	InfoHeader.biXPelsPerMeter = 0;
+	InfoHeader.biYPelsPerMeter = 0;
+	InfoHeader.biClrUsed = 0;
+	InfoHeader.biClrImportant = 0;
 
-	file.write((char*)&fileHeader, sizeof(fileHeader));
-	file.write((char*)&infoHeader, sizeof(infoHeader));
+	fOut.write((char*)&BmpHeader, sizeof(BmpHeader));
+	fOut.write((char*)&InfoHeader, sizeof(InfoHeader));
 
-	BITMAPINFO info;
-	info.bmiHeader = infoHeader;
+	BITMAPINFO BmpInfo;
+	BmpInfo.bmiHeader = InfoHeader;
 
-	HDC winDC = GetWindowDC(window);
+	HDC winDC = GetWindowDC(Window);
 	HDC memDC = CreateCompatibleDC(winDC);
-	BYTE* memory = 0;
-	HBITMAP bitmap = CreateDIBSection(winDC, &info, DIB_RGB_COLORS, (void**)&memory, 0, 0);
-	SelectObject(memDC, bitmap);
-	BitBlt(memDC, 0, 0, bitmap_dx, bitmap_dy, winDC, 0, 0, SRCCOPY);
+	BYTE* Buffer = 0;
+	HBITMAP ImageDC = CreateDIBSection(winDC, &BmpInfo, DIB_RGB_COLORS, (void**)&Buffer, 0, 0);
+	SelectObject(memDC, ImageDC);
+	BitBlt(memDC, 0, 0, Width, Height, winDC, 0, 0, SRCCOPY);
 	DeleteDC(memDC);
-	ReleaseDC(window, winDC);
+	ReleaseDC(Window, winDC);
 
-	int bytes = (((24 * bitmap_dx + 31) & (~31)) / 8)*bitmap_dy;
-	file.write((const char*)memory, bytes);
+	size_t Size = (((24 * Width + 31) & (~31)) / 8)*Height;
+	fOut.write((const char*)Buffer, Size);
 
-	DeleteObject(bitmap);
+	DeleteObject(ImageDC);
 }
 
 #endif
@@ -531,8 +531,8 @@ int main()
 	do
 	{
 		EyePos.Z += Real(1);
-		LightDir = Translate::RotZ(LightDir, 0.45)
-			Tick++;
+		LightDir = Translate::RotZ(LightDir, Real(0.45));
+		Tick++;
 		for( size_t y = 0; y < HEIGHT; y++ )
 		{
 			for( size_t x = 0; x < WIDTH; x++ )
@@ -582,14 +582,7 @@ int main()
 
 					Diffuse *= Shadow(Point, LightDir, Real(0.5), 10, 10);
 
-					if( std::isfinite(Diffuse) )
-					{
-						Screen += Shades[static_cast<size_t>(Diffuse*(sizeof(Shades) - 2))];
-					}
-					else
-					{
-						Screen += '!';
-					}
+					Screen += Shades[static_cast<size_t>(Diffuse*(sizeof(Shades) - 2))];
 				}
 				else
 				{
@@ -599,11 +592,10 @@ int main()
 			Screen += "\n";
 		}
 		printf("%s", Screen.c_str());
-		// Screenshot
 #ifdef _WIN32
 		//CaptureScreen(GetForegroundWindow(), (std::to_string(Tick) + ".bmp").c_str());
 #endif
 		Screen.clear();
-	} while( /*getchar() != 'q'*/ Tick < 300 );
+	} while( Tick < 300 );
 	return 0;
 }
