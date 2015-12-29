@@ -69,15 +69,15 @@ typedef float Real;
 
 #ifdef USE_SSE
 #include <pmmintrin.h>
-// simd modulo
-inline __m128 _mm_mod_ps2(const __m128& a, const __m128& aDiv)
+// Simd Modulo
+inline __m128 _mm_mod_ps2(const __m128& A, const __m128& Divisor)
 {
-	__m128 c = _mm_div_ps(a, aDiv);
-	__m128i i = _mm_cvttps_epi32(c);
-	__m128 cTrunc = _mm_cvtepi32_ps(i);
-	__m128 base = _mm_mul_ps(cTrunc, aDiv);
-	__m128 r = _mm_sub_ps(a, base);
-	return r;
+	__m128 C = _mm_div_ps(A, Divisor);
+	__m128i I = _mm_cvttps_epi32(C);
+	__m128 Trunc = _mm_cvtepi32_ps(I);
+	__m128 Base = _mm_mul_ps(Trunc, Divisor);
+	__m128 Remainder = _mm_sub_ps(A, Base);
+	return Remainder;
 }
 #endif
 
@@ -104,7 +104,13 @@ union Vec3
 	Real Length() const
 	{
 #ifdef USE_SSE
-		return static_cast<Real>(_mm_cvtss_f32(_mm_sqrt_ss(_mm_dp_ps(SimdReals, SimdReals, 0x71))));
+		return static_cast<Real>(
+			_mm_cvtss_f32(
+				_mm_sqrt_ss(
+					_mm_dp_ps(SimdReals, SimdReals, 0x71)
+					)
+				)
+			);
 #else
 		return static_cast<Real>(
 			sqrt(X*X + Y*Y + Z*Z)
@@ -116,8 +122,9 @@ union Vec3
 #ifdef USE_SSE
 		return Vec3{ _mm_mul_ps(
 			this->SimdReals, _mm_rsqrt_ps(
-				_mm_dp_ps(
-					this->SimdReals, this->SimdReals, 0x7f)))
+				_mm_dp_ps(this->SimdReals, this->SimdReals, 0x7f)
+				)
+			)
 		};
 #else
 		const Real Len = Length();
@@ -150,18 +157,23 @@ union Vec3
 	Vec3 operator + (const Vec3& Other) const
 	{
 #ifdef USE_SSE
-		return Vec3{ _mm_add_ps(SimdReals, Other.SimdReals) };
+		return Vec3{
+			_mm_add_ps(SimdReals, Other.SimdReals)
+		};
 #else
 		return Vec3{
 			X + Other.X,
 			Y + Other.Y,
-			Z + Other.Z };
+			Z + Other.Z
+		};
 #endif
 	}
 	Vec3 operator - (const Vec3& Other) const
 	{
 #ifdef USE_SSE
-		return Vec3{ _mm_sub_ps(SimdReals,Other.SimdReals) };
+		return Vec3{
+			_mm_sub_ps(SimdReals,Other.SimdReals)
+		};
 #else
 		return Vec3{
 			X - Other.X,
@@ -174,7 +186,9 @@ union Vec3
 	Vec3 operator * (const Vec3& Other) const
 	{
 #ifdef USE_SSE
-		return Vec3{ _mm_mul_ps(SimdReals,Other.SimdReals) };
+		return Vec3{
+			_mm_mul_ps(SimdReals,Other.SimdReals)
+		};
 #else
 		return Vec3{
 			X * Other.X,
@@ -187,7 +201,9 @@ union Vec3
 	Vec3 operator / (const Vec3& Other) const
 	{
 #ifdef USE_SSE
-		return Vec3{ _mm_div_ps(SimdReals,Other.SimdReals) };
+		return Vec3{
+			_mm_div_ps(SimdReals,Other.SimdReals)
+		};
 #else
 		return Vec3{
 			X / Other.X,
@@ -200,7 +216,9 @@ union Vec3
 	Vec3 operator % (const Vec3& Other) const
 	{
 #ifdef USE_SSE
-		return Vec3{ _mm_mod_ps2(SimdReals,Other.SimdReals) };
+		return Vec3{
+			_mm_mod_ps2(SimdReals,Other.SimdReals)
+		};
 #else
 		return Vec3{
 			fmod(X,Other.X),
@@ -213,7 +231,9 @@ union Vec3
 	Vec3 operator + (const Real& Other) const
 	{
 #ifdef USE_SSE
-		return Vec3{ _mm_add_ps(SimdReals,_mm_set1_ps(Other)) };
+		return Vec3{
+			_mm_add_ps(SimdReals,_mm_set1_ps(Other))
+		};
 #else
 		return Vec3{
 			X + Other,
@@ -226,7 +246,9 @@ union Vec3
 	Vec3 operator - (const Real& Other) const
 	{
 #ifdef USE_SSE
-		return Vec3{ _mm_sub_ps(SimdReals,_mm_set1_ps(Other)) };
+		return Vec3{
+			_mm_sub_ps(SimdReals,_mm_set1_ps(Other))
+		};
 #else
 		return Vec3{
 			X - Other,
@@ -239,7 +261,9 @@ union Vec3
 	Vec3 operator * (const Real& Other) const
 	{
 #ifdef USE_SSE
-		return Vec3{ _mm_mul_ps(SimdReals,_mm_set1_ps(Other)) };
+		return Vec3{
+			_mm_mul_ps(SimdReals,_mm_set1_ps(Other))
+		};
 #else
 		return Vec3{
 			X * Other,
@@ -252,7 +276,9 @@ union Vec3
 	Vec3 operator / (const Real& Other) const
 	{
 #ifdef USE_SSE
-		return Vec3{ _mm_div_ps(SimdReals,_mm_set1_ps(Other)) };
+		return Vec3{
+			_mm_div_ps(SimdReals,_mm_set1_ps(Other))
+		};
 #else
 		return Vec3{
 			X / Other,
@@ -265,7 +291,9 @@ union Vec3
 	Vec3 operator % (const Real& Other) const
 	{
 #ifdef USE_SSE
-		return Vec3{ _mm_mod_ps2(SimdReals,_mm_set1_ps(Other)) };
+		return Vec3{
+			_mm_mod_ps2(SimdReals,_mm_set1_ps(Other))
+		};
 #else
 		return Vec3{
 			fmod(X,Other),
@@ -281,7 +309,6 @@ namespace Shapes
 Real Plane(const Vec3& Position, const Vec3& Normal)
 {
 	return Position.Dot(Normal.Normalized());
-	//return Position.Y;
 }
 Real Sphere(const Vec3& Position, Real Radius)
 {
@@ -371,6 +398,17 @@ Vec3 RotZ(const Vec3& Position, Real Angle)
 		Position.Z,
 	};
 }
+Vec3 Repeat(const Vec3& Position, const Vec3& Bounds)
+{
+	return (Position % Bounds) - (Bounds*Real(0.5));
+}
+Vec3 RepeatGround(const Vec3& Position, const Vec3& Bounds)
+{
+	Vec3 Rep{ Position };
+	Rep.X = std::remainder(Rep.X, Bounds.X) - (Bounds.X * Real(0.5));
+	Rep.Z = std::remainder(Rep.Z, Bounds.Z) - (Bounds.Z * Real(0.5));
+	return Rep;
+}
 }
 
 #define WIDTH (79)
@@ -388,13 +426,20 @@ Real Scene(const Vec3& Point)
 
 	Distance = Operations::Union(
 		Distance,
-		Shapes::Sphere(Point, 1.0)
+		Shapes::Sphere(
+			Translate::RepeatGround(
+				Point,
+				Vec3{ 10,0,10 }),
+			1)
 		);
 
 	Distance = Operations::Union(
 		Distance,
-		Shapes::RoundBox(Translate::RotZ(Point - Vec3{ -5,2,5 }, Real(15 + Tick * 15)),
-						 Vec3{ 1,2,1 }, 0.525f)
+		Shapes::RoundBox(
+			Translate::RotZ(
+				Point - Vec3{ -5,2,5 }, Real(15 + Tick * 15)
+				),
+			Vec3{ 1,2,1 }, 0.525f)
 		);
 
 	Distance = Operations::Union(
@@ -407,16 +452,20 @@ Real Scene(const Vec3& Point)
 
 	Distance = Operations::Union(
 		Distance,
-		Shapes::Torus(Translate::RotX(Point - Vec3{ 0,Real(0.5),12 }, 45),
-					  Real(1), Real(6)
-					  ));
+		Shapes::Torus(
+			Translate::RotX(Point - Vec3{ 0,Real(0.5),12 }, 45),
+			Real(1), Real(6)
+			)
+		);
 
-	for( size_t i = 1; i < 8; i++ )
+	for( size_t i = 1; i < 20; i++ )
 	{
 		Distance = Operations::Union(
 			Distance,
 			Shapes::Torus(
-				Translate::RotZ(Translate::RotX(Point - Vec3{ 0,Real(0.5),Real(12 + i * 7) }, 85), Real(i * 30 + (Tick * 5))),
+				Translate::RotZ(
+					Translate::RotX(Point - Vec3{ 0,Real(0.5),Real(12 + i * 7) }, 85), Real(i * 30 + (Tick * 5))
+					),
 				Real(1), Real(6)
 				));
 	}
@@ -470,21 +519,19 @@ Real Shadow(const Vec3& LightPos, const Vec3& LightDir, Real Min, Real Max, Real
 	return Res;
 }
 
-const char Shades[] = ".:*oe&$#%@";
-
-#include <float.h>
+const char Shades[] = ".:*oe$&#%@";
 
 int main()
 {
-	//_controlfp_s(nullptr, _EM_INEXACT, _MCW_EM);
-	Vec3 LightDir = Vec3{ 1,1,0 }.Normalized();
+	Vec3 LightDir = Vec3{ 1,0,Real(-0.15) }.Normalized();
 	Vec3 EyePos = Vec3{ 0,2,-6 };
 
 	std::string Screen;
 	Screen.reserve(WIDTH * HEIGHT);
 	do
 	{
-		EyePos.Z += Real(2);
+		EyePos.Z += Real(1);
+		LightDir = Translate::RotZ(LightDir, 0.45).Normalized();
 		Tick++;
 		for( size_t y = 0; y < HEIGHT; y++ )
 		{
@@ -509,14 +556,20 @@ int main()
 				UV.X *= WIDTH / HEIGHT;
 				//UV.X *= 0.75;
 
-				// Fov
-				UV.Z = Real(2);
+				/* Fov
+				15deg bisec = tan((pi/12)/2)    = 30 degrees fov = 0.1316524975873958
+				30deg bisec = tan((pi/6)/2)     = 60 degrees fov = 0.26794919243112270
+				36deg bisec = tan(((2pi)/5)/2)  = 72 degrees fov = 0.7265425280053608858
+				45dec bisec = tan((pi/2)/2)     = 90 degrees fov = 1
+				*/
+				UV.Z = Real(1 / 0.7265425280053608858);
+				UV = UV.Normalized();
 
 				bool Hit = false;
 
-				Real Distance = March(EyePos, UV.Normalized(), &Hit);
+				Real Distance = March(EyePos, UV, &Hit);
 
-				Vec3 Point = EyePos + (UV.Normalized() * Distance);
+				Vec3 Point = EyePos + (UV * Distance);
 
 				if( Hit )
 				{
@@ -548,9 +601,9 @@ int main()
 		printf("%s", Screen.c_str());
 		// Screenshot
 #ifdef _WIN32
-		//CaptureScreen(GetForegroundWindow(), (std::to_string(Tick) + ".bmp").c_str());
+		CaptureScreen(GetForegroundWindow(), (std::to_string(Tick) + ".bmp").c_str());
 #endif
 		Screen.clear();
-	} while( /*getchar() != 'q'*/ Tick < 200 );
+	} while( /*getchar() != 'q'*/ Tick < 300 );
 	return 0;
 }
