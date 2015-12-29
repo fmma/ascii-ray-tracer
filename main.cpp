@@ -601,7 +601,7 @@ int main()
 		printf("%s", Screen.c_str());
 		// Screenshot
 #ifdef _WIN32
-		CaptureScreen(GetForegroundWindow(), (std::to_string(Tick) + ".bmp").c_str());
+		//CaptureScreen(GetForegroundWindow(), (std::to_string(Tick) + ".bmp").c_str());
 #endif
 		Screen.clear();
 	} while( /*getchar() != 'q'*/ Tick < 300 );
