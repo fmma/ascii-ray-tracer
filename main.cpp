@@ -531,8 +531,8 @@ int main()
 	do
 	{
 		EyePos.Z += Real(1);
-		LightDir = Translate::RotZ(LightDir, 0.45).Normalized();
-		Tick++;
+		LightDir = Translate::RotZ(LightDir, 0.45)
+			Tick++;
 		for( size_t y = 0; y < HEIGHT; y++ )
 		{
 			for( size_t x = 0; x < WIDTH; x++ )
