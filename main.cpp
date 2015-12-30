@@ -336,18 +336,27 @@ Real Capsule(const Vec3& Position, Vec3 A, Vec3 B, Real Radius)
 }
 Real Torus(const Vec3& Position, Real InRadius, Real OutRadius)
 {
-	Vec3 Q{ Vec3{Position.X,Position.Z,0}.Length() - OutRadius,Position.Y,0 };
+	Vec3 Q{ Vec3{ Position.X,Position.Z,0 }.Length() - OutRadius,Position.Y,0 };
 	return Q.Length() - InRadius;
 }
 }
 
 namespace Operations
 {
+Real Clamp(Real A, Real Min, Real Max)
+{
+	const Real T = A < Min ? Min : A;
+	return T > Max ? Max : T;
+}
+Real Lerp(Real A, Real B, Real T)
+{
+	return std::fma(T, B, std::fma(-T, A, A));
+}
 Real Union(Real A, Real B)
 {
 	return std::min(A, B);
 }
-Real SmoothUnion(Real A, Real B, Real K = 8)
+Real SmoothUnion(Real A, Real B, Real K = 1)
 {
 	/*
 	Power Smooth
@@ -355,8 +364,8 @@ Real SmoothUnion(Real A, Real B, Real K = 8)
 	B = std::pow(B, K);
 	return std::pow((A*B) / (A + B), Real(1) / K);
 	*/
-	Real H = std::min<Real>(0, std::max<Real>(1, Real(0.5) + Real(0.5)*(B - A) / K));
-	return (B * (Real(1.0) - H) + A*H) - (K*H*(Real(1.0) - H));
+	Real H = Clamp(Real(0.5) + Real(0.5)*(B - A) / K, 0, 1);
+	return Lerp(B, A, H) - (K*H*(Real(1.0) - H));
 }
 Real Intersection(Real A, Real B)
 {
@@ -426,15 +435,6 @@ Real Scene(const Vec3& Point)
 
 	Distance = Operations::Union(
 		Distance,
-		Shapes::Sphere(
-			Translate::RepeatGround(
-				Point,
-				Vec3{ 10,0,10 }),
-			1)
-		);
-
-	Distance = Operations::Union(
-		Distance,
 		Shapes::RoundBox(
 			Translate::RotZ(
 				Point - Vec3{ -5,2,5 }, Real(15 + Tick * 15)
@@ -450,24 +450,24 @@ Real Scene(const Vec3& Point)
 						Real(3.75)
 						));
 
-	Distance = Operations::Union(
+	Distance = Operations::SmoothUnion(
 		Distance,
 		Shapes::Torus(
 			Translate::RotX(Point - Vec3{ 0,Real(0.5),12 }, 45),
-			Real(1), Real(6)
-			)
+			Real(0.5), Real(7)
+			), 3
 		);
 
-	for( size_t i = 1; i < 20; i++ )
+	for( size_t i = 1; i < 5; i++ )
 	{
-		Distance = Operations::Union(
+		Distance = Operations::SmoothUnion(
 			Distance,
 			Shapes::Torus(
 				Translate::RotZ(
 					Translate::RotX(Point - Vec3{ 0,Real(0.5),Real(12 + i * 7) }, 85), Real(i * 30 + (Tick * 5))
 					),
 				Real(1), Real(6)
-				));
+				), 3);
 	}
 
 	return Distance;
@@ -477,7 +477,7 @@ Vec3 CalcNormal(const Vec3& Point)
 {
 #define EPSILON static_cast<Real>(0.001)
 	return Vec3{
-		Scene(Point + Vec3{ EPSILON,0,0}) - Scene(Point - Vec3{ EPSILON,0,0 }),
+		Scene(Point + Vec3{ EPSILON,0,0 }) - Scene(Point - Vec3{ EPSILON,0,0 }),
 		Scene(Point + Vec3{ 0,EPSILON,0 }) - Scene(Point - Vec3{ 0,EPSILON,0 }),
 		Scene(Point + Vec3{ 0,0,EPSILON }) - Scene(Point - Vec3{ 0,0,EPSILON }),
 	}.Normalized();
@@ -519,19 +519,18 @@ Real Shadow(const Vec3& LightPos, const Vec3& LightDir, Real Min, Real Max, Real
 	return Res;
 }
 
-const char Shades[] = ".:*oe$&#%@";
+const char Shades[] = ".:*oe&#%@";
 
 int main()
 {
-	Vec3 LightDir = Vec3{ 1,0,Real(-0.15) }.Normalized();
+	Vec3 LightDir = Vec3{ 1,1,1 }.Normalized();
 	Vec3 EyePos = Vec3{ 0,2,-6 };
 
 	std::string Screen;
 	Screen.reserve(WIDTH * HEIGHT);
 	do
 	{
-		EyePos.Z += Real(1);
-		LightDir = Translate::RotZ(LightDir, Real(0.45));
+		EyePos.Z += Real(0.25);
 		Tick++;
 		for( size_t y = 0; y < HEIGHT; y++ )
 		{
