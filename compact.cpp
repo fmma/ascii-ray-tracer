@@ -1,7 +1,7 @@
 #include <math.h>
 #include <algorithm>
 #include <string>
-#include <pmmintrin.h>
+#include <immintrin.h>
 using namespace std;typedef float R;
 #define _W 79
 #define _H 39
