@@ -1,475 +1,76 @@
+#include <windows.h> 
+#include <x86intrin.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <math.h>
 #include <algorithm>
 #include <string>
 
-#ifdef _WIN32
-#define NOMINMAX
-#include <Windows.h>
-#include <fstream>
-void CaptureScreen(HWND Window, const char* filename)
-{
-	RECT WindowBounds;
-	GetWindowRect(Window, &WindowBounds);
+#include "constants.h"
+#include "linalg.h"
+#include "console.h"
+#include "shapes.h"
 
-	int Width = WindowBounds.right - WindowBounds.left;
-	int Height = WindowBounds.bottom - WindowBounds.top;
-
-	std::ofstream fOut(filename, std::ios::binary);
-	if( !fOut ) return;
-
-	BITMAPFILEHEADER BmpHeader;
-	BITMAPINFOHEADER InfoHeader;
-
-	BmpHeader.bfType = 0x4d42;
-	BmpHeader.bfSize = 0;
-	BmpHeader.bfReserved1 = 0;
-	BmpHeader.bfReserved2 = 0;
-	BmpHeader.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
-
-	InfoHeader.biSize = sizeof(InfoHeader);
-	InfoHeader.biWidth = Width;
-	InfoHeader.biHeight = Height;
-	InfoHeader.biPlanes = 1;
-	InfoHeader.biBitCount = 24;
-	InfoHeader.biCompression = BI_RGB;
-	InfoHeader.biSizeImage = 0;
-	InfoHeader.biXPelsPerMeter = 0;
-	InfoHeader.biYPelsPerMeter = 0;
-	InfoHeader.biClrUsed = 0;
-	InfoHeader.biClrImportant = 0;
-
-	fOut.write((char*)&BmpHeader, sizeof(BmpHeader));
-	fOut.write((char*)&InfoHeader, sizeof(InfoHeader));
-
-	BITMAPINFO BmpInfo;
-	BmpInfo.bmiHeader = InfoHeader;
-
-	HDC winDC = GetWindowDC(Window);
-	HDC memDC = CreateCompatibleDC(winDC);
-	BYTE* Buffer = 0;
-	HBITMAP ImageDC = CreateDIBSection(winDC, &BmpInfo, DIB_RGB_COLORS, (void**)&Buffer, 0, 0);
-	SelectObject(memDC, ImageDC);
-	BitBlt(memDC, 0, 0, Width, Height, winDC, 0, 0, SRCCOPY);
-	DeleteDC(memDC);
-	ReleaseDC(Window, winDC);
-
-	size_t Size = (((24 * Width + 31) & (~31)) / 8)*Height;
-	fOut.write((const char*)Buffer, Size);
-
-	DeleteObject(ImageDC);
-}
-
-#endif
-
-typedef float Real;
-
-#define USE_SSE
-
-#ifdef USE_SSE
-#include <pmmintrin.h>
-// Simd Modulo
-inline __m128 _mm_mod_ps2(const __m128& A, const __m128& Divisor)
-{
-	__m128 C = _mm_div_ps(A, Divisor);
-	__m128i I = _mm_cvttps_epi32(C);
-	__m128 Trunc = _mm_cvtepi32_ps(I);
-	__m128 Base = _mm_mul_ps(Trunc, Divisor);
-	__m128 Remainder = _mm_sub_ps(A, Base);
-	return Remainder;
-}
-#endif
-
-union Vec3
-{
-#ifdef USE_SSE
-	__m128 SimdReals;
-	Vec3(__m128 Vec)
-		:
-		SimdReals(Vec)
-	{
-	}
-#endif
-	Vec3(Real X, Real Y, Real Z)
-		:
-		X(X), Y(Y), Z(Z)
-	{
-	}
-	Real Reals[3];
-	struct
-	{
-		Real X, Y, Z;
-	};
-	Real Length() const
-	{
-#ifdef USE_SSE
-		return static_cast<Real>(
-			_mm_cvtss_f32(
-				_mm_sqrt_ss(
-					_mm_dp_ps(SimdReals, SimdReals, 0x71)
-					)
-				)
-			);
-#else
-		return static_cast<Real>(
-			sqrt(X*X + Y*Y + Z*Z)
-			);
-#endif
-	}
-	Vec3 Normalized() const
-	{
-#ifdef USE_SSE
-		return Vec3{ _mm_mul_ps(
-			this->SimdReals, _mm_rsqrt_ps(
-				_mm_dp_ps(this->SimdReals, this->SimdReals, 0x7f)
-				)
-			)
-		};
-#else
-		const Real Len = Length();
-		return (*this) / Len;
-#endif
-	}
-
-	Real Dot(const Vec3& Other) const
-	{
-#ifdef USE_SSE
-		return static_cast<Real>(
-			_mm_cvtss_f32(
-				_mm_dp_ps(SimdReals, Other.SimdReals, 0x71)
-				)
-			);
-#else
-		return X * Other.X + Y * Other.Y + Z * Other.Z;
-#endif
-	}
-
-	Vec3 Abs() const
-	{
-		return Vec3{
-			abs(X),
-			abs(Y),
-			abs(Z)
-		};
-	}
-
-	Vec3 operator + (const Vec3& Other) const
-	{
-#ifdef USE_SSE
-		return Vec3{
-			_mm_add_ps(SimdReals, Other.SimdReals)
-		};
-#else
-		return Vec3{
-			X + Other.X,
-			Y + Other.Y,
-			Z + Other.Z
-		};
-#endif
-	}
-	Vec3 operator - (const Vec3& Other) const
-	{
-#ifdef USE_SSE
-		return Vec3{
-			_mm_sub_ps(SimdReals,Other.SimdReals)
-		};
-#else
-		return Vec3{
-			X - Other.X,
-			Y - Other.Y,
-			Z - Other.Z
-		};
-#endif
-	}
-
-	Vec3 operator * (const Vec3& Other) const
-	{
-#ifdef USE_SSE
-		return Vec3{
-			_mm_mul_ps(SimdReals,Other.SimdReals)
-		};
-#else
-		return Vec3{
-			X * Other.X,
-			Y * Other.Y,
-			Z * Other.Z
-		};
-#endif
-	}
-
-	Vec3 operator / (const Vec3& Other) const
-	{
-#ifdef USE_SSE
-		return Vec3{
-			_mm_div_ps(SimdReals,Other.SimdReals)
-		};
-#else
-		return Vec3{
-			X / Other.X,
-			Y / Other.Y,
-			Z / Other.Z
-		};
-#endif
-	}
-
-	Vec3 operator % (const Vec3& Other) const
-	{
-#ifdef USE_SSE
-		return Vec3{
-			_mm_mod_ps2(SimdReals,Other.SimdReals)
-		};
-#else
-		return Vec3{
-			fmod(X,Other.X),
-			fmod(Y,Other.Y),
-			fmod(Z,Other.Z)
-		};
-#endif
-	}
-
-	Vec3 operator + (const Real& Other) const
-	{
-#ifdef USE_SSE
-		return Vec3{
-			_mm_add_ps(SimdReals,_mm_set1_ps(Other))
-		};
-#else
-		return Vec3{
-			X + Other,
-			Y + Other,
-			Z + Other
-		};
-#endif
-	}
-
-	Vec3 operator - (const Real& Other) const
-	{
-#ifdef USE_SSE
-		return Vec3{
-			_mm_sub_ps(SimdReals,_mm_set1_ps(Other))
-		};
-#else
-		return Vec3{
-			X - Other,
-			Y - Other,
-			Z - Other
-		};
-#endif
-	}
-
-	Vec3 operator * (const Real& Other) const
-	{
-#ifdef USE_SSE
-		return Vec3{
-			_mm_mul_ps(SimdReals,_mm_set1_ps(Other))
-		};
-#else
-		return Vec3{
-			X * Other,
-			Y * Other,
-			Z * Other
-		};
-#endif
-	}
-
-	Vec3 operator / (const Real& Other) const
-	{
-#ifdef USE_SSE
-		return Vec3{
-			_mm_div_ps(SimdReals,_mm_set1_ps(Other))
-		};
-#else
-		return Vec3{
-			X / Other,
-			Y / Other,
-			Z / Other
-		};
-#endif
-	}
-
-	Vec3 operator % (const Real& Other) const
-	{
-#ifdef USE_SSE
-		return Vec3{
-			_mm_mod_ps2(SimdReals,_mm_set1_ps(Other))
-		};
-#else
-		return Vec3{
-			fmod(X,Other),
-			fmod(Y , Other),
-			fmod(Z , Other)
-		};
-#endif
-	}
-};
-
-namespace Shapes
-{
-Real Plane(const Vec3& Position, const Vec3& Normal)
-{
-	return Position.Dot(Normal.Normalized());
-}
-Real Sphere(const Vec3& Position, Real Radius)
-{
-	return Position.Length() - Radius;
-}
-Real Box(const Vec3& Position, Vec3 Bounds)
-{
-	Vec3 Dist = Position.Abs() - Bounds;
-	return std::min<Real>(std::max(Dist.X, std::max<Real>(Dist.Y, Dist.Z)), 0.0) +
-		Vec3{ std::max<Real>(Dist.X,0.0),
-		std::max<Real>(Dist.Y,0.0),
-		std::max<Real>(Dist.Z,0.0) }.Length();
-}
-Real RoundBox(const Vec3& Position, Vec3 Bounds, Real Radius)
-{
-	return Box(Position, Bounds) - Radius;
-}
-Real Capsule(const Vec3& Position, Vec3 A, Vec3 B, Real Radius)
-{
-	Vec3 Pa = Position - A;
-	Vec3 Ba = B - A;
-	Real H = (Pa.Dot(Ba) / Ba.Dot(Ba));
-	H = std::min<Real>(0, std::max<Real>(1.0, H));
-	return (Pa - (Ba*H)).Length() - Radius;
-}
-Real Torus(const Vec3& Position, Real InRadius, Real OutRadius)
-{
-	Vec3 Q{ Vec3{ Position.X,Position.Z,0 }.Length() - OutRadius,Position.Y,0 };
-	return Q.Length() - InRadius;
-}
-}
-
-namespace Operations
-{
-Real Clamp(Real A, Real Min, Real Max)
-{
-	const Real T = A < Min ? Min : A;
-	return T > Max ? Max : T;
-}
-Real Lerp(Real A, Real B, Real T)
-{
-	return std::fma(T, B, std::fma(-T, A, A));
-}
-Real Union(Real A, Real B)
-{
-	return std::min(A, B);
-}
-Real SmoothUnion(Real A, Real B, Real K = 1)
-{
-	/*
-	Power Smooth
-	A = std::pow(A, K);
-	B = std::pow(B, K);
-	return std::pow((A*B) / (A + B), Real(1) / K);
-	*/
-	Real H = Clamp(Real(0.5) + Real(0.5)*(B - A) / K, 0, 1);
-	return Lerp(B, A, H) - (K*H*(Real(1.0) - H));
-}
-Real Intersection(Real A, Real B)
-{
-	return std::max(A, B);
-}
-Real Subtract(Real A, Real B)
-{
-	return Intersection(-A, B);
-}
-}
-
-namespace Translate
-{
-const static Real Pi(static_cast<Real>(3.1415926535897932384626433));
-Vec3 RotX(const Vec3& Position, Real Angle)
-{
-	Angle *= Pi / Real(180);
-	return Vec3{
-		Position.X,
-		Position.Y * cos(Angle) - Position.Z * sin(Angle),
-		Position.Y * sin(Angle) + Position.Z * cos(Angle),
-	};
-}
-Vec3 RotY(const Vec3& Position, Real Angle)
-{
-	Angle *= Pi / Real(180);
-	return Vec3{
-		Position.Z * sin(Angle) + Position.X * cos(Angle),
-		Position.Y,
-		Position.Z * cos(Angle) - Position.X * sin(Angle),
-	};
-}
-Vec3 RotZ(const Vec3& Position, Real Angle)
-{
-	Angle *= Pi / Real(180);
-	return Vec3{
-		Position.X * cos(Angle) - Position.Y * sin(Angle),
-		Position.X * sin(Angle) + Position.Y * cos(Angle),
-		Position.Z,
-	};
-}
-Vec3 Repeat(const Vec3& Position, const Vec3& Bounds)
-{
-	return (Position % Bounds) - (Bounds*Real(0.5));
-}
-Vec3 RepeatGround(const Vec3& Position, const Vec3& Bounds)
-{
-	Vec3 Rep{ Position };
-	Rep.X = std::remainder(Rep.X, Bounds.X) - (Bounds.X * Real(0.5));
-	Rep.Z = std::remainder(Rep.Z, Bounds.Z) - (Bounds.Z * Real(0.5));
-	return Rep;
-}
-}
-
-#define WIDTH (79)
-#define HEIGHT (39)
-#define PREC 0.002
+const char Shades0[] = "12345678";
+const char Shades1[] = ".coCO0@";
+const char Shades2[] = "-+=LH#E";
+const char Shades3[] = "*a&%$";
+const char Shades4[] = ">zxZX";
+const char Shades5[] = ".::";
+const char sky = ' ';
+const char grass = ':';
+// const char Shades[] = ".:*o#@"; // ".:*oe&#%@";
 
 static size_t Tick = 0;
 
 //// SCENE
-Real Scene(const Vec3& Point)
+Shapes::Shape Scene(const Vec3& Point)
 {
-	Real Distance = 0;
+	Shapes::Shape Distance = Shapes::Shape{0,0};
+	// Distance = Shapes::Plane(Point, Vec3{ 0,1,0 });
+	// Distance = Shapes::Sphere(Point, Real(2));
 
-	Distance = Shapes::Plane(Point, Vec3{ 0,1,0 });
-
+	Distance = Shapes::PlaneS(Point, Vec3{ 0,1,0 }, 5);
+	Distance = Operations::Union(Distance,
+		Shapes::BoxS(Point - Vec3{10,1,1}, Vec3{1,4,10}, 3));
+/*
 	Distance = Operations::Union(
 		Distance,
-		Shapes::RoundBox(
+		Shapes::RoundBoxS(
 			Translate::RotZ(
 				Point - Vec3{ -5,2,5 }, Real(15 + Tick * 15)
 				),
-			Vec3{ 1,2,1 }, 0.525f)
+			Vec3{ 1,2,1 }, 0.525f, 4)
 		);
 
 	Distance = Operations::Union(
 		Distance,
-		Shapes::Capsule(Point,
+		Shapes::CapsuleS(Point,
 						Vec3{ 5,5,6 },
 						Vec3{ -5,5,6 },
-						Real(3.75)
-						));
+						Real(3.75),
+						3));
 
 	Distance = Operations::SmoothUnion(
 		Distance,
-		Shapes::Torus(
+		Shapes::TorusS(
 			Translate::RotX(Point - Vec3{ 0,Real(0.5),12 }, 45),
-			Real(0.5), Real(7)
-			), 3
+			Real(0.5), Real(7),
+			3), 3
 		);
 
 	for( size_t i = 1; i < 5; i++ )
 	{
 		Distance = Operations::SmoothUnion(
 			Distance,
-			Shapes::Torus(
+			Shapes::TorusS(
 				Translate::RotZ(
 					Translate::RotX(Point - Vec3{ 0,Real(0.5),Real(12 + i * 7) }, 85), Real(i * 30 + (Tick * 5))
 					),
-				Real(1), Real(6)
-				), 3);
+				Real(1), Real(6),
+				3), 3);
 	}
-
+	*/
 	return Distance;
 }
 
@@ -477,30 +78,32 @@ Vec3 CalcNormal(const Vec3& Point)
 {
 #define EPSILON static_cast<Real>(0.001)
 	return Vec3{
-		Scene(Point + Vec3{ EPSILON,0,0 }) - Scene(Point - Vec3{ EPSILON,0,0 }),
-		Scene(Point + Vec3{ 0,EPSILON,0 }) - Scene(Point - Vec3{ 0,EPSILON,0 }),
-		Scene(Point + Vec3{ 0,0,EPSILON }) - Scene(Point - Vec3{ 0,0,EPSILON }),
+		Scene(Point + Vec3{ EPSILON,0,0 }).Distance - Scene(Point - Vec3{ EPSILON,0,0 }).Distance,
+		Scene(Point + Vec3{ 0,EPSILON,0 }).Distance - Scene(Point - Vec3{ 0,EPSILON,0 }).Distance,
+		Scene(Point + Vec3{ 0,0,EPSILON }).Distance - Scene(Point - Vec3{ 0,0,EPSILON }).Distance,
 	}.Normalized();
 }
 
-Real March(const Vec3& Origin, const Vec3& Ray, bool* Hit)
+Shapes::Shape March(const Vec3& Origin, const Vec3& Ray, bool* Hit)
 {
 	Real Distance = 0;
+	int Material = 0;
 	for( size_t i = 0; i < 128; i++ )
 	{
-		Real ClosestSurface = Scene(Origin + (Ray * Distance));
-		if( ClosestSurface < PREC )
+		Shapes::Shape ClosestSurface = Scene(Origin + (Ray * Distance));
+		if( ClosestSurface.Distance < PREC )
 		{
 			// "Hit" a surface
 			if( Hit != nullptr )
 			{
+				Material = ClosestSurface.Material;
 				*Hit = true;
 			}
 			break;
 		}
-		Distance += ClosestSurface * Real(0.75);
+		Distance += ClosestSurface.Distance * Real(0.9);
 	}
-	return Distance;
+	return Shapes::Shape{Distance, Material};
 }
 
 Real Shadow(const Vec3& LightPos, const Vec3& LightDir, Real Min, Real Max, Real K)
@@ -508,29 +111,98 @@ Real Shadow(const Vec3& LightPos, const Vec3& LightDir, Real Min, Real Max, Real
 	Real Res = 1;
 	for( Real t = Min; t < Max;)
 	{
-		Real Distance = Scene(LightPos + LightDir*t);
-		if( Distance < PREC )
+		Shapes::Shape Distance = Scene(LightPos + LightDir*t);
+		if( Distance.Distance < PREC )
 		{
 			return 0.0;
 		}
-		Res = std::min(Res, K*Distance / t);
-		t += Distance;
+		Res = std::min(Res, K*Distance.Distance / t);
+		t += Distance.Distance;
 	}
 	return Res;
 }
 
-const char Shades[] = ".:*oe&#%@";
-
 int main()
 {
-	Vec3 LightDir = Vec3{ 1,1,1 }.Normalized();
+	system("clear");
+	Real AngleX = Real(0.0);
+	Real AngleY = Real(0.0);
+	int Running = 1;
+	HANDLE rhnd = GetStdHandle(STD_INPUT_HANDLE);  // handle to read console
+
+	double uvz = Real(1 / 0.7265425280053608858);
+
+    DWORD Events = 0;     // Event count
+    DWORD EventsRead = 0; // Events read from console
+
+	Vec3 LightDir = Vec3{ 1,1,-1 }.Normalized();
 	Vec3 EyePos = Vec3{ 0,2,-6 };
 
 	std::string Screen;
 	Screen.reserve(WIDTH * HEIGHT);
 	do
 	{
-		EyePos.Z += Real(0.25);
+		// gets the systems current "event" count
+        GetNumberOfConsoleInputEvents(rhnd, &Events);
+
+        if(Events != 0){ // if something happened we will handle the events we want
+
+            // create event buffer the size of how many Events
+            INPUT_RECORD eventBuffer[Events];
+
+            // fills the event buffer with the events and saves count in EventsRead
+            ReadConsoleInput(rhnd, eventBuffer, Events, &EventsRead);
+
+            // loop through the event buffer using the saved count
+            for(DWORD i = 0; i < EventsRead; ++i){
+
+                // check if event[i] is a key event && if so is a press not a release
+                if(eventBuffer[i].EventType == KEY_EVENT && eventBuffer[i].Event.KeyEvent.bKeyDown){
+                    // check if the key press was an arrow key
+                    switch(eventBuffer[i].Event.KeyEvent.wVirtualKeyCode){
+                        case VK_LEFT:
+							// EyePos.X -= Real(0.25);
+							AngleX -= Real(3.0);
+							break;
+                        case VK_RIGHT:
+							// EyePos.X += Real(0.25);
+							AngleX += Real(3.0);
+							break;
+                        case VK_UP:
+							AngleY += Real(3.0);
+							// EyePos.Z += Real(0.25);
+							break;
+                        case VK_DOWN:   // if any arrow key was pressed break here
+							AngleY -= Real(3.0);
+							// 
+							break;
+
+                        case VK_ESCAPE: // if escape key was pressed end program loop
+                            Running = false;
+                            break;
+						case 0x57: // w
+							EyePos = EyePos + Translate::RotY(Vec3{0,0,Real(0.25)}, AngleX); // Real(0.25);
+							break;
+						case 0x41: // a
+							EyePos = EyePos + Translate::RotY(Vec3{Real(-0.25),0,0}, AngleX); // Real(0.25);
+							break;
+						case 0x53: // s
+							EyePos = EyePos + Translate::RotY(Vec3{0,0,Real(-0.25)}, AngleX); // Real(0.25);
+							break;
+						case 0x44: // d
+							EyePos = EyePos + Translate::RotY(Vec3{Real(0.25),0,0}, AngleX); // Real(0.25);
+							break;
+
+                        default:        // no handled cases where pressed 
+                            break;
+                    }
+                }
+
+            } // end EventsRead loop
+
+        }
+
+		// EyePos.Z += Real(0.25);
 		Tick++;
 		for( size_t y = 0; y < HEIGHT; y++ )
 		{
@@ -548,6 +220,10 @@ int main()
 				// Recanonicalize [-1,1]
 				UV = (UV * 2.0) - 1.0;
 
+				UV.Z = uvz;
+				UV = Translate::RotY(UV, AngleX);
+				UV = Translate::RotX(UV, AngleY);
+
 				// Flip Y axis
 				UV.Y *= Real(-1);
 
@@ -561,14 +237,12 @@ int main()
 				36deg bisec = tan(((2pi)/5)/2)  = 72 degrees fov = 0.7265425280053608858
 				45dec bisec = tan((pi/2)/2)     = 90 degrees fov = 1
 				*/
-				UV.Z = Real(1 / 0.7265425280053608858);
 				UV = UV.Normalized();
 
 				bool Hit = false;
+				Shapes::Shape Distance = March(EyePos, UV, &Hit);
 
-				Real Distance = March(EyePos, UV, &Hit);
-
-				Vec3 Point = EyePos + (UV * Distance);
+				Vec3 Point = EyePos + (UV * Distance.Distance);
 
 				if( Hit )
 				{
@@ -581,20 +255,44 @@ int main()
 
 					Diffuse *= Shadow(Point, LightDir, Real(0.5), 10, 10);
 
-					Screen += Shades[static_cast<size_t>(Diffuse*(sizeof(Shades) - 2))];
+					switch(Distance.Material) {
+						case 0:
+							Screen += Shades0[static_cast<size_t>(Diffuse*(sizeof(Shades0) - 2))];
+							break;
+						case 1:
+							Screen += Shades1[static_cast<size_t>(Diffuse*(sizeof(Shades1) - 2))];
+							break;
+						case 2:
+							Screen += Shades2[static_cast<size_t>(Diffuse*(sizeof(Shades2) - 2))];
+							break;
+						case 3:
+							Screen += Shades3[static_cast<size_t>(Diffuse*(sizeof(Shades3) - 2))];
+							break;
+						case 4:
+							Screen += Shades4[static_cast<size_t>(Diffuse*(sizeof(Shades4) - 2))];
+							break;
+						case 5:
+							Screen += Shades5[static_cast<size_t>(Diffuse*(sizeof(Shades5) - 2))];
+							break;
+					}
 				}
 				else
 				{
-					Screen += ' ';
+					if(y > HEIGHT/2)
+						Screen += grass;
+					else
+						Screen += sky;
 				}
 			}
 			Screen += "\n";
 		}
 		printf("%s", Screen.c_str());
+		ResetCursor();
 #ifdef _WIN32
 		//CaptureScreen(GetForegroundWindow(), (std::to_string(Tick) + ".bmp").c_str());
 #endif
 		Screen.clear();
-	} while( Tick < 300 );
+	} while( Running );
+	system("clear");
 	return 0;
 }
